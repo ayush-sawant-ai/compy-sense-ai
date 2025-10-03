@@ -1,10 +1,9 @@
 import { ArrowRight, BarChart3, Bell, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 export default function Landing() {
-  const navigate = useNavigate();
 
   const features = [
     {
@@ -45,10 +44,12 @@ export default function Landing() {
             <Button 
               size="lg" 
               className="text-lg px-8 py-6 gradient-primary"
-              onClick={() => navigate('/dashboard')}
+              asChild
             >
-              Get Started
-              <ArrowRight className="ml-2 h-5 w-5" />
+              <Link to="/dashboard">
+                Get Started
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Link>
             </Button>
           </div>
         </div>
@@ -96,10 +97,12 @@ export default function Landing() {
             <Button 
               size="lg"
               className="text-lg px-8 py-6"
-              onClick={() => navigate('/dashboard')}
+              asChild
             >
-              Start Free Trial
-              <ArrowRight className="ml-2 h-5 w-5" />
+              <Link to="/dashboard">
+                Start Free Trial
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Link>
             </Button>
           </Card>
         </div>
