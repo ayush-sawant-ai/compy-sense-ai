@@ -1,24 +1,94 @@
-import { useState } from 'react';
-import { Plus, ExternalLink, RefreshCw, TrendingUp } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, ExternalLink, RefreshCw, TrendingUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Navbar } from '@/components/Navbar';
-import { mockCompetitors, mockInsights } from '@/data/mockData';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
+import { competitorService } from '@/services/competitorService';
+import type { Competitor, Insight } from '@/lib/supabase';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 export default function Dashboard() {
-  const [competitors] = useState(mockCompetitors);
-  const [insights] = useState(mockInsights);
+  const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [insights, setInsights] = useState<(Insight & { competitor: Competitor })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [newCompetitor, setNewCompetitor] = useState({
+    name: '',
+    logo: '🏢',
+    website: '',
+    description: '',
+  });
 
-  const handleAddCompetitor = () => {
-    toast.info('API Placeholder: /api/addCompetitor');
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [competitorsData, insightsData] = await Promise.all([
+        competitorService.getCompetitors(),
+        competitorService.getInsights(),
+      ]);
+      setCompetitors(competitorsData);
+      setInsights(insightsData);
+    } catch (error) {
+      toast.error('Failed to load data');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRefresh = () => {
-    toast.success('Refreshing insights...');
-    // Placeholder: /api/getInsights
+  const handleAddCompetitor = async () => {
+    if (!newCompetitor.name || !newCompetitor.website) {
+      toast.error('Name and website are required');
+      return;
+    }
+
+    try {
+      toast.loading('Adding competitor...');
+      const added = await competitorService.addCompetitor(newCompetitor);
+      setCompetitors([added, ...competitors]);
+      setIsDialogOpen(false);
+      setNewCompetitor({ name: '', logo: '🏢', website: '', description: '' });
+      toast.dismiss();
+      toast.success('Competitor added successfully');
+
+      toast.loading('Analyzing competitor website...');
+      await competitorService.scrapeAndAnalyze(added.id, added.website, added.name);
+      toast.dismiss();
+      toast.success('Analysis complete');
+      await loadData();
+    } catch (error) {
+      toast.dismiss();
+      toast.error('Failed to add competitor');
+      console.error(error);
+    }
+  };
+
+  const handleRefresh = async () => {
+    try {
+      toast.loading('Refreshing insights...');
+      await loadData();
+      toast.dismiss();
+      toast.success('Insights refreshed');
+    } catch (error) {
+      toast.dismiss();
+      toast.error('Failed to refresh');
+    }
   };
 
   const getCategoryColor = (category: string) => {
@@ -31,10 +101,23 @@ export default function Dashboard() {
     return colors[category as keyof typeof colors] || 'bg-gray-500/10 text-gray-500';
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <main className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <main className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -61,7 +144,7 @@ export default function Dashboard() {
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{insights.filter(i => !i.isRead).length}</div>
+              <div className="text-2xl font-bold">{insights.filter(i => !i.is_read).length}</div>
               <p className="text-xs text-muted-foreground">Last 24 hours</p>
             </CardContent>
           </Card>
@@ -82,10 +165,63 @@ export default function Dashboard() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold">Competitors</h2>
-            <Button onClick={handleAddCompetitor}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Competitor
-            </Button>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Competitor
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Competitor</DialogTitle>
+                  <DialogDescription>
+                    Enter details about the competitor you want to track
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="name">Company Name</Label>
+                    <Input
+                      id="name"
+                      value={newCompetitor.name}
+                      onChange={(e) => setNewCompetitor({ ...newCompetitor, name: e.target.value })}
+                      placeholder="e.g., OpenAI"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="logo">Logo Emoji</Label>
+                    <Input
+                      id="logo"
+                      value={newCompetitor.logo}
+                      onChange={(e) => setNewCompetitor({ ...newCompetitor, logo: e.target.value })}
+                      placeholder="🤖"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="website">Website URL</Label>
+                    <Input
+                      id="website"
+                      value={newCompetitor.website}
+                      onChange={(e) => setNewCompetitor({ ...newCompetitor, website: e.target.value })}
+                      placeholder="https://openai.com"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="description">Description</Label>
+                    <Input
+                      id="description"
+                      value={newCompetitor.description}
+                      onChange={(e) => setNewCompetitor({ ...newCompetitor, description: e.target.value })}
+                      placeholder="Brief description"
+                    />
+                  </div>
+                  <Button onClick={handleAddCompetitor} className="w-full">
+                    Add Competitor
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -98,7 +234,7 @@ export default function Dashboard() {
                       <div>
                         <CardTitle className="text-lg">{competitor.name}</CardTitle>
                         <CardDescription className="text-xs">
-                          Updated {formatDistanceToNow(new Date(competitor.lastChecked), { addSuffix: true })}
+                          Updated {formatDistanceToNow(new Date(competitor.last_checked), { addSuffix: true })}
                         </CardDescription>
                       </div>
                     </div>
@@ -129,30 +265,38 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-4">
-            {insights.map(insight => (
-              <Card key={insight.id} className={insight.isRead ? 'opacity-60' : ''}>
-                <CardHeader>
-                  <div className="flex items-start gap-4">
-                    <div className="text-3xl">{insight.competitorLogo}</div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <CardTitle className="text-lg">{insight.title}</CardTitle>
-                        <Badge className={getCategoryColor(insight.category)}>
-                          {insight.category}
-                        </Badge>
-                        {!insight.isRead && (
-                          <Badge variant="destructive">New</Badge>
-                        )}
-                      </div>
-                      <CardDescription className="text-sm mb-2">
-                        {insight.competitorName} · {formatDistanceToNow(new Date(insight.timestamp), { addSuffix: true })}
-                      </CardDescription>
-                      <p className="text-sm text-muted-foreground">{insight.description}</p>
-                    </div>
-                  </div>
-                </CardHeader>
+            {insights.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground">No insights yet. Add competitors to start tracking.</p>
+                </CardContent>
               </Card>
-            ))}
+            ) : (
+              insights.map(insight => (
+                <Card key={insight.id} className={insight.is_read ? 'opacity-60' : ''}>
+                  <CardHeader>
+                    <div className="flex items-start gap-4">
+                      <div className="text-3xl">{insight.competitor?.logo || '🏢'}</div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CardTitle className="text-lg">{insight.title}</CardTitle>
+                          <Badge className={getCategoryColor(insight.category)}>
+                            {insight.category}
+                          </Badge>
+                          {!insight.is_read && (
+                            <Badge variant="destructive">New</Badge>
+                          )}
+                        </div>
+                        <CardDescription className="text-sm mb-2">
+                          {insight.competitor?.name || 'Unknown'} · {formatDistanceToNow(new Date(insight.timestamp), { addSuffix: true })}
+                        </CardDescription>
+                        <p className="text-sm text-muted-foreground">{insight.description}</p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                </Card>
+              ))
+            )}
           </div>
         </div>
       </main>
